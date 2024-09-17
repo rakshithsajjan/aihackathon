@@ -2,11 +2,7 @@ import openai
 import streamlit as st
 import json
 
-
-
-client = openai.OpenAI(api_key='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')
-
-
+client = openai.OpenAI(api_key='')
 customer_service_teams = json.loads('''{
   "customer_service_teams": [
     {
@@ -136,7 +132,7 @@ given the following customer complaint or query:
 and the following list of customer service teams and their responsibilities-
 {json.dumps(customer_service_teams, indent=2)}
 
-determine the most appropriate team to handle this complaint or query.Respond with only the team name.
+determine the most appropriate team to handle this complaint or query. Respond with only the team name.
 """
     response = client.chat.completions.create(
         model="gpt-4",
@@ -147,10 +143,20 @@ determine the most appropriate team to handle this complaint or query.Respond wi
     )
     return response.choices[0].message.content.strip()
 
+def analyze_feedback(feedback):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that categorizes customer feedback, provides a response, analyzes sentiment, and extracts insights. For the category, use only these options: Current Account, Customer Support, Fixed Deposit, Loans, Online Banking, Savings Account. For the response, be brief and polite, either thanking them or apologizing and assuring them of action, as appropriate. Provide your output as a JSON object with 'category', 'response', 'sentiment', 'insights', and 'dissatisfaction_points' keys. The sentiment should be a number from 0 to 10, where 0 is extremely negative and 10 is extremely positive."},
+            {"role": "user", "content": f"Analyze this feedback: {feedback}"}
+        ],
+        response_format={"type": "json_object"}
+    )
+    return json.loads(response.choices[0].message.content)
+
 def main():
     st.title("Complaint Management System")
 
-    # chat history 
     if "messages" not in st.session_state:
         st.session_state.messages = [
             {"role": "system", "content": "You are a financial institution's complaint management assistant. Your task is to ask 3 questions to gather information about the user's complaint or query before routing it to the appropriate department."}
@@ -158,21 +164,16 @@ def main():
     if "question_count" not in st.session_state:
         st.session_state.question_count = 0
 
-    # display chat history
-    for message in st.session_state.messages[1:]:  # Skip the system message
+    for message in st.session_state.messages[1:]:  
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # input
     if prompt := st.chat_input("What's your complaint or question?"):
-        
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        ##respo0nce
         with st.chat_message("assistant"):
             with st.spinner("Processing..."):
                 response = get_chatbot_response(st.session_state.messages)
@@ -181,14 +182,24 @@ def main():
                     st.session_state.question_count += 1
                     full_response = response
                 else:
-                    routed_team = route_complaint(" ".join([m["content"] for m in st.session_state.messages if m["role"] == "user"]))
-                    full_response = f"Thank you for providing the information. Based on our AI analysis, your complaint has been routed to the {routed_team}."
-                
+                    full_complaint = " ".join([m["content"] for m in st.session_state.messages if m["role"] == "user"])
+                    routed_team = route_complaint(full_complaint)
+                    analysis = analyze_feedback(full_complaint)
+                    
+                    full_response = f"""Thank you for providing the information. Based on our AI analysis:
+
+1. Your complaint has been routed to the {routed_team}.
+2. Category: {analysis['category']}
+3. Sentiment: {analysis['sentiment']}/10
+4. Insights: {analysis['insights']}
+5. Dissatisfaction Points: {analysis['dissatisfaction_points']}
+
+Our response: {analysis['response']}"""
+
             st.markdown(full_response)
-        
 
         st.session_state.messages.append({"role": "assistant", "content": full_response})
-#reset
+
         if st.session_state.question_count >= 3:
             st.session_state.question_count = 0
             st.session_state.messages = [st.session_state.messages[0]] 
